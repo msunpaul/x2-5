@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>소비 후회율 분석기</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0d0f; --surface: #16161a; --surface2: #1e1e24;
+    --border: rgba(255,255,255,0.07); --border2: rgba(255,255,255,0.13);
+    --text: #f0efe8; --text2: #8a8a96; --text3: #4a4a56;
+    --safe: #1d9e75; --warn: #ba7517; --danger: #e07b2a; --critical: #d84040;
+    --accent: #7f77dd; --accent-dim: rgba(127,119,221,0.15);
+    --mono: 'DM Mono', monospace; --sans: 'Noto Sans KR', sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+  .header { padding: 3rem 0 2rem; text-align: center; border-bottom: 1px solid var(--border); position: relative; overflow: hidden; }
+  .header::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 80% at 50% -10%, rgba(127,119,221,0.18) 0%, transparent 70%); pointer-events: none; }
+  .header-eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; color: var(--accent); text-transform: uppercase; margin-bottom: 1rem; }
+  .header-title { font-size: clamp(28px,5vw,48px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 0.75rem; }
+  .header-title span { color: var(--accent); }
+  .header-desc { font-size: 14px; color: var(--text2); max-width: 520px; margin: 0 auto; line-height: 1.7; }
+  .main { max-width: 960px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+  .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+  @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } }
+  .col-left, .col-right { display: flex; flex-direction: column; gap: 1.25rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; transition: border-color 0.2s; }
+  .card:hover { border-color: var(--border2); }
+  .card-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text3); margin-bottom: 1.25rem; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink:0; }
+  .dot-s { background: var(--accent); } .dot-i { background: var(--warn); } .dot-f { background: var(--critical); } .dot-c { background: var(--safe); }
+  .field { margin-bottom: 1.25rem; }
+  .field:last-child { margin-bottom: 0; }
+  .field-label { font-size: 12px; color: var(--text2); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .field-label .val { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--surface2); padding: 2px 8px; border-radius: 4px; }
+  .api-search-wrap { display: flex; gap: 8px; margin-bottom: 10px; }
+  .api-search-wrap input[type=text] { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--sans); font-size: 14px; padding: 10px 12px; outline: none; transition: border-color 0.15s; }
+  .api-search-wrap input[type=text]:focus { border-color: var(--accent); }
+  .api-search-wrap input[type=text]::placeholder { color: var(--text3); }
+  .fetch-btn { background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 8px; color: var(--accent); font-family: var(--mono); font-size: 12px; padding: 0 14px; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
+  .fetch-btn:hover { background: rgba(127,119,221,0.25); }
+  .fetch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .api-status { font-family: var(--mono); font-size: 11px; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px; display: none; line-height: 1.6; }
+  .api-status.loading { background: rgba(127,119,221,0.1); color: var(--accent); display: block; }
+  .api-status.success { background: rgba(29,158,117,0.1); color: var(--safe); display: block; }
+  .api-status.error   { background: rgba(216,64,64,0.1); color: var(--critical); display: block; }
+  .date-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .date-row label { font-size: 11px; color: var(--text3); font-family: var(--mono); white-space: nowrap; }
+  .date-row input[type=date] { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 12px; padding: 6px 8px; outline: none; transition: border-color 0.15s; flex: 1; }
+  .date-row input[type=date]:focus { border-color: var(--accent); }
+  .date-row input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
+  .cat-select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--sans); font-size: 13px; padding: 9px 12px; outline: none; cursor: pointer; transition: border-color 0.15s; margin-bottom: 10px; }
+  .cat-select:focus { border-color: var(--accent); }
+  .cat-select option { background: var(--surface2); }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: var(--surface2); border-radius: 2px; outline: none; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); cursor: pointer; }
+  input[type=range]:focus::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-dim); }
+  input[type=number] { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 14px; padding: 10px 12px; outline: none; transition: border-color 0.15s; }
+  input[type=number]:focus { border-color: var(--accent); }
+  input[type=number]::-webkit-inner-spin-button { opacity: 0.3; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+  .fetched-vals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+  .fv-item { background: var(--surface2); border-radius: 8px; padding: 8px 10px; text-align: center; }
+  .fv-num { font-family: var(--mono); font-size: 16px; font-weight: 500; color: var(--accent); }
+  .fv-lbl { font-size: 10px; color: var(--text3); margin-top: 2px; }
+  .fv-wide { grid-column: 1 / -1; }
+  /* 민원 자동 결과 */
+  .complaint-result { background: var(--surface2); border-radius: 10px; padding: 1rem; margin-top: 10px; }
+  .complaint-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+  .complaint-row:last-child { margin-bottom: 0; }
+  .complaint-row .cval { font-family: var(--mono); font-size: 13px; color: var(--text); font-weight: 500; }
+  .complaint-bar { height: 4px; border-radius: 2px; background: var(--surface); margin: 6px 0 8px; overflow: hidden; }
+  .complaint-bar-fill { height: 100%; border-radius: 2px; background: var(--safe); transition: width 0.4s; }
+  .complaint-months { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .complaint-month-chip { font-family: var(--mono); font-size: 10px; padding: 3px 8px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); color: var(--text2); }
+  .complaint-month-chip.peak { border-color: var(--critical); color: var(--critical); background: rgba(216,64,64,0.08); }
+  .complaint-note { font-size: 11px; color: var(--text3); font-family: var(--mono); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); line-height: 1.6; }
+  /* 상품 선택 */
+  .product-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .product-item { display: flex; gap: 12px; align-items: center; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; transition: border-color 0.15s; }
+  .product-item:hover { border-color: var(--border2); }
+  .product-item.selected { border-color: var(--critical); background: rgba(216,64,64,0.07); }
+  .product-thumb { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; background: var(--surface); flex-shrink: 0; }
+  .product-info { flex: 1; min-width: 0; }
+  .product-title { font-size: 12px; color: var(--text); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .product-meta { display: flex; gap: 10px; margin-top: 4px; font-family: var(--mono); font-size: 11px; }
+  .product-rating { color: var(--warn); }
+  .product-reviews { color: var(--text3); }
+  .product-price { color: var(--text2); }
+  .product-radio { width: 16px; height: 16px; accent-color: var(--critical); flex-shrink: 0; }
+  .f-result { background: var(--surface2); border-radius: 10px; padding: 1rem; margin-top: 10px; }
+  .f-result-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+  .f-result-row:last-child { margin-bottom: 0; }
+  .f-result-row .fval { font-family: var(--mono); font-size: 13px; color: var(--text); font-weight: 500; }
+  .f-formula-note { font-size: 11px; color: var(--text3); font-family: var(--mono); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); line-height: 1.6; }
+  /* result */
+  .result-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2rem 1.5rem 1.5rem; position: relative; overflow: hidden; }
+  .result-card::before { content: ''; position: absolute; inset: 0; opacity: 0; transition: opacity 0.5s; pointer-events: none; }
+  .result-card.safe::before    { background: radial-gradient(ellipse at top, rgba(29,158,117,0.15),  transparent 60%); opacity: 1; }
+  .result-card.caution::before { background: radial-gradient(ellipse at top, rgba(186,117,23,0.15),  transparent 60%); opacity: 1; }
+  .result-card.warning::before { background: radial-gradient(ellipse at top, rgba(224,123,42,0.18),  transparent 60%); opacity: 1; }
+  .result-card.danger::before  { background: radial-gradient(ellipse at top, rgba(216,64,64,0.18),   transparent 60%); opacity: 1; }
+  .result-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 1.25rem; border: 1px solid; transition: all 0.3s; }
+  .result-score-wrap { display: flex; align-items: baseline; gap: 8px; margin-bottom: 0.5rem; }
+  .result-score { font-family: var(--mono); font-size: 56px; font-weight: 500; line-height: 1; transition: color 0.3s; }
+  .result-score-unit { font-size: 20px; color: var(--text2); font-family: var(--mono); }
+  .result-desc { font-size: 13px; color: var(--text2); margin-bottom: 1.5rem; line-height: 1.6; }
+  .level-track { position: relative; margin-bottom: 1.5rem; }
+  .level-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+  .level-bar span { flex: 1; }
+  .seg-safe { background: var(--safe); } .seg-caution { background: var(--warn); opacity: 0.6; } .seg-warning { background: var(--danger); opacity: 0.8; } .seg-danger { background: var(--critical); }
+  .level-indicator { position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: white; border: 2px solid var(--bg); transform: translateX(-50%); transition: left 0.4s cubic-bezier(0.34,1.56,0.64,1); pointer-events: none; }
+  .level-labels { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--text3); margin-top: 4px; }
+  .breakdown { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+  .bk-item { background: var(--surface2); border-radius: 10px; padding: 10px 12px; text-align: center; }
+  .bk-val { font-family: var(--mono); font-size: 20px; font-weight: 500; }
+  .bk-lbl { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .actions-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; }
+  .actions-title { font-size: 12px; color: var(--text3); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 1rem; }
+  .action-item { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--text2); line-height: 1.6; }
+  .action-item:first-of-type { border-top: none; padding-top: 0; }
+  .action-num { min-width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px; font-weight: 500; flex-shrink: 0; margin-top: 1px; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; }
+  .chart-title { font-size: 12px; color: var(--text3); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 1.25rem; }
+  .chart-wrap { position: relative; height: 180px; }
+  .formula-strip { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px; color: var(--text2); flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .formula-strip .fval { color: var(--text); font-weight: 500; }
+  .formula-strip .fsep { color: var(--text3); }
+  .server-status { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem 1rem; margin-bottom: 1.5rem; font-family: var(--mono); font-size: 12px; color: var(--text2); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); flex-shrink: 0; transition: background 0.3s; }
+  .status-dot.on  { background: var(--safe); box-shadow: 0 0 6px rgba(29,158,117,0.5); }
+  .status-dot.off { background: var(--critical); }
+  .status-text { flex: 1; }
+  .check-btn { background: none; border: 1px solid var(--border2); border-radius: 6px; color: var(--text3); font-family: var(--mono); font-size: 11px; padding: 3px 10px; cursor: pointer; transition: color 0.15s; }
+  .check-btn:hover { color: var(--text); }
+  .manual-toggle { font-family: var(--mono); font-size: 11px; color: var(--text3); cursor: pointer; text-decoration: underline; display: inline-block; margin-top: 6px; }
+  .manual-toggle:hover { color: var(--text2); }
+  .manual-section { display: none; margin-top: 12px; }
+  .manual-section.open { display: block; }
+  .footer { text-align: center; padding: 2rem 1.5rem; border-top: 1px solid var(--border); font-size: 12px; color: var(--text3); font-family: var(--mono); }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  .card, .result-card, .actions-card, .chart-card { animation: fadeUp 0.5s ease both; }
+  .card:nth-child(1) { animation-delay: 0.05s; } .card:nth-child(2) { animation-delay: 0.1s; } .card:nth-child(3) { animation-delay: 0.15s; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <p class="header-eyebrow">X2_5팀 · 소비 후회율 분석 시스템</p>
+  <h1 class="header-title">소비 <span>후회율</span> 분석기</h1>
+  <p class="header-desc">검색어를 입력하면 데이터랩·쿠팡으로 바로 이동해 수치를 확인하고<br>민원 지수는 CSV 데이터로 자동 산출됩니다</p>
+</header>
+
+<main class="main">
+  <div class="formula-strip">
+    <span>R =</span><span class="fval">(S + I + F) / 3</span>
+    <span class="fsep">·</span><span>S = 최고비중월% / 100</span>
+    <span class="fsep">·</span><span>I = (W+M)/2</span>
+    <span class="fsep">·</span><span>F = (R_review + C)/2</span>
+    <span class="fsep">·</span><span>C = (P−B)/B  <span style="color:var(--safe)">← CSV 자동</span></span>
+  </div>
+
+  <div class="layout">
+    <div class="col-left">
+
+      <!-- S + I: 동조성 + 충동성 (블랙키위 통합) -->
+      <div class="card">
+        <p class="card-label"><span class="dot dot-s"></span>동조성 S &amp; <span class="dot dot-i"></span>충동성 I · 블랙키위</p>
+
+        <div class="field">
+          <div class="field-label"><span>검색어로 블랙키위 바로 열기</span></div>
+          <div class="api-search-wrap">
+            <input type="text" id="keyword-s" placeholder="예: 두바이초콜릿" value="두바이초콜릿"
+              onkeydown="if(event.key==='Enter') openBlackkiwi()">
+            <button class="fetch-btn" style="border-color:#4caf7d;color:#4caf7d;background:rgba(76,175,125,0.1)" onclick="openBlackkiwi()">블랙키위 열기 ↗</button>
+          </div>
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;line-height:1.7">
+            블랙키위에서 아래 3가지 수치를 확인 후 입력하세요.
+          </div>
+        </div>
+
+        <!-- 확인 가이드 -->
+        <div style="background:var(--surface2);border-radius:10px;padding:0.9rem 1rem;margin-bottom:1.25rem">
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em">블랙키위에서 확인할 수치</div>
+          <div style="font-size:12px;color:var(--text2);line-height:2">
+            <span style="color:var(--accent);font-weight:500">① 월별 검색 비율</span> → 최고 비중 월 % → S 입력<br>
+            <span style="color:var(--warn);font-weight:500">② 요일별 검색 비율</span> → 토요일 % + 일요일 % → I(W) 입력<br>
+            <span style="color:var(--warn);font-weight:500">③ 월별 검색 비율</span> → 최고 비중 월 % → I(M) 입력
+          </div>
+        </div>
+
+        <!-- S 입력 -->
+        <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em">동조성 S</div>
+        <div class="field">
+          <div class="field-label">
+            <span>최고 비중 월 검색 비율 (%)</span>
+            <span class="val" id="s-peak-out">55%</span>
+          </div>
+          <input type="range" id="s-peak" min="0" max="100" value="55" step="0.5"
+            oninput="document.getElementById('s-peak-out').textContent=parseFloat(this.value).toFixed(1)+'%'; compute()">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:4px;font-family:var(--mono)">
+            <span>0% (분산)</span><span>100% (한 달 집중)</span>
+          </div>
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:8px 12px;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--text2)">동조성 S = 최고 비중 월 % / 100</span>
+          <span id="s-display" style="font-family:var(--mono);font-size:14px;font-weight:500;color:var(--accent)">0.55</span>
+        </div>
+
+        <!-- I 입력 -->
+        <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em">충동성 I</div>
+        <div class="grid-2">
+          <div class="field"><div class="field-label"><span>토요일 검색 비율 (%)</span></div><input type="number" id="sat" min="0" max="100" value="16" step="0.1" oninput="compute()"></div>
+          <div class="field"><div class="field-label"><span>일요일 검색 비율 (%)</span></div><input type="number" id="sun" min="0" max="100" value="15" step="0.1" oninput="compute()"></div>
+        </div>
+        <div class="field">
+          <div class="field-label"><span>최고 비중 월 검색 비율 (%)</span><span class="val" id="mcomp-out">55%</span></div>
+          <input type="range" id="mcomp" min="0" max="100" value="55" step="0.5"
+            oninput="document.getElementById('mcomp-out').textContent=parseFloat(this.value).toFixed(1)+'%'; compute()">
+        </div>
+        <div style="background:var(--surface2);border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:var(--text2)">충동성 I = (W + M) / 2</span>
+          <span id="i-display" style="font-family:var(--mono);font-size:14px;font-weight:500;color:var(--warn)">0.43</span>
+        </div>
+      </div>
+
+      <!-- F -->
+      <div class="card">
+        <p class="card-label"><span class="dot dot-f"></span>부정 피드백 · F · 쿠팡 리뷰 직접 확인</p>
+
+        <div class="field">
+          <div class="field-label"><span>검색어로 쿠팡 바로 열기</span></div>
+          <div class="api-search-wrap">
+            <input type="text" id="keyword-f" placeholder="예: 두바이쫀득쿠키" value="두바이쫀득쿠키">
+            <button class="fetch-btn" onclick="openCoupang()">쿠팡 열기 ↗</button>
+          </div>
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;line-height:1.7">
+            버튼을 누르면 쿠팡 검색 결과가 새 탭으로 열립니다.<br>
+            리뷰 많은 순으로 정렬되어 있어요. 별점 1점·2점 수와 전체 리뷰 수를 확인 후 아래에 입력하세요.
+          </div>
+        </div>
+
+        <!-- 쿠팡 확인 가이드 -->
+        <div style="background:var(--surface2);border-radius:10px;padding:0.9rem 1rem;margin-bottom:1.25rem">
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em">확인 방법</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.9">
+            1. 쿠팡 열기 → 상품 클릭<br>
+            2. 상품 페이지에서 <span style="color:var(--text);font-weight:500">별점 분포</span> 확인<br>
+            3. <span style="color:var(--critical)">★1점</span>과 <span style="color:var(--danger)">★2점</span> 개수, 전체 리뷰 수를 아래에 입력
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <div class="field-label"><span>별점 1점 수</span></div>
+            <input type="number" id="r1" min="0" value="39" oninput="compute()">
+          </div>
+          <div class="field">
+            <div class="field-label"><span>별점 2점 수</span></div>
+            <input type="number" id="r2" min="0" value="12" oninput="compute()">
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-label"><span>전체 리뷰 수</span></div>
+          <input type="number" id="rtotal" min="1" value="411" oninput="compute()">
+        </div>
+
+        <!-- F 계산 결과 표시 -->
+        <div style="background:var(--surface2);border-radius:10px;padding:0.9rem 1rem;margin-top:4px">
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text2)">
+            <span>부정 리뷰 비율 R_review = (1점+2점) / 전체</span>
+            <span id="f-r-display" style="font-family:var(--mono);font-size:13px;color:var(--text);font-weight:500">12.4%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- C: 민원 자동 -->
+      <div class="card">
+        <p class="card-label"><span class="dot dot-c"></span>민원 지수 · C · 한국소비자원 CSV 자동</p>
+        <div class="field">
+          <div class="field-label"><span>카테고리 선택</span></div>
+          <select class="cat-select" id="category" onchange="updateComplaintCat()">
+            <option value="기타 장비 및 제품">전체</option>
+            <option value="가공식품" selected>식품 (가공식품)</option>
+            <option value="축산·수산물 식품">식품 (축산·수산물)</option>
+            <option value="식물 식품">식품 (식물 식품)</option>
+            <option value="의류, 신발, 가방, 보석 및 시계">패션의류 / 잡화</option>
+            <option value="화장품 및 화장용품">화장품/미용</option>
+            <option value="가전제품 및 정보통신기기">디지털/가전</option>
+            <option value="스포츠 및 취미용품">스포츠/레저</option>
+            <option value="생활용품">생활/건강</option>
+            <option value="건물, 시설 및 서비스">여가/생활편의</option>
+            <option value="자동차 및 관련 용품">자동차</option>
+            <option value="의약(외)품 및 의료용구">의약품/의료용구</option>
+            <option value="완구 및 게임용품">완구/게임</option>
+          </select>
+        </div>
+        <div id="c-auto-result">
+          <div class="complaint-result">
+            <div class="complaint-row"><span>월별 민원 건수 (2024-10 ~ 2026-04)</span></div>
+            <div class="complaint-months" id="c-months"></div>
+            <div class="complaint-row" style="margin-top:10px"><span>유행 정점월 민원 (P)</span><span class="cval" id="c-peak-val">—</span></div>
+            <div class="complaint-row"><span>평상시 월평균 민원 (B)</span><span class="cval" id="c-base-val">—</span></div>
+            <div class="complaint-row"><span>민원 지수 C = (P−B)/B</span><span class="cval" id="c-score-val">—</span></div>
+            <div class="complaint-bar"><div class="complaint-bar-fill" id="c-bar-fill" style="width:0%"></div></div>
+            <div id="c-level-badge" style="display:none;margin-top:8px;padding:6px 10px;border-radius:6px;font-size:12px;font-family:var(--mono);line-height:1.6"></div>
+            <p class="complaint-note" id="c-note">카테고리를 선택하면 자동으로 계산됩니다.</p>
+          </div>
+        </div>
+        <hr class="divider">
+        <span class="manual-toggle" onclick="toggleManual('manual-c')">▾ C 수동 입력</span>
+        <div class="manual-section" id="manual-c">
+          <div class="grid-2" style="margin-top:12px">
+            <div class="field"><div class="field-label"><span>정점월 민원 (P)</span></div><input type="number" id="cp" min="0" value="130" oninput="cMode='manual'; compute()"></div>
+            <div class="field"><div class="field-label"><span>평균 민원 (B)</span></div><input type="number" id="cb" min="1" value="100" oninput="cMode='manual'; compute()"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-right">
+      <div class="result-card" id="result-card">
+        <div class="result-badge" id="result-badge">⚠ 경고 구간</div>
+        <div class="result-score-wrap">
+          <div class="result-score" id="result-score">—</div>
+          <div class="result-score-unit">%</div>
+        </div>
+        <p class="result-desc" id="result-desc">최종 소비 후회율 (R)</p>
+        <div class="level-track">
+          <div class="level-indicator" id="level-indicator" style="left:50%"></div>
+          <div class="level-bar"><span class="seg-safe"></span><span class="seg-caution"></span><span class="seg-warning"></span><span class="seg-danger"></span></div>
+          <div class="level-labels"><span>0.0 안전</span><span>0.2</span><span>0.4 경고</span><span>0.7</span><span>1.0 위험</span></div>
+        </div>
+        <div class="breakdown">
+          <div class="bk-item"><div class="bk-val" id="bk-s" style="color:var(--accent)">—</div><div class="bk-lbl">동조성 S</div></div>
+          <div class="bk-item"><div class="bk-val" id="bk-i" style="color:var(--warn)">—</div><div class="bk-lbl">충동성 I</div></div>
+          <div class="bk-item"><div class="bk-val" id="bk-f" style="color:var(--critical)">—</div><div class="bk-lbl">부정피드백 F</div></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <p class="chart-title">지표 구성 비교</p>
+        <div class="chart-wrap"><canvas id="myChart"></canvas></div>
+      </div>
+      <div class="actions-card">
+        <p class="actions-title">추천 행동 강령</p>
+        <div id="action-list"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  X2_5팀 — 소비 후회 패턴 분석과 방지 솔루션 · 박수호 / 오은서 / 박은총 / 박정현
+</footer>
+
+<script>
+const PROXY = 'http://localhost:5000';
+
+/* ── 한국소비자원 데이터 내장 (2024-10~2026-04 통합) ── */
+const COMPLAINT_DATA = {
+  "가공식품": {"2024-10":768,"2024-11":974,"2024-12":736,"2025-01":881,"2025-02":1192,"2025-03":1015,"2025-04":1100,"2025-05":879,"2025-06":734,"2025-07":1311,"2025-08":1284,"2025-09":994,"2025-10":1387,"2025-11":1155,"2025-12":1119,"2026-01":1265,"2026-02":1017,"2026-03":1743,"2026-04":1706},
+  "가구 및 가구설비": {"2024-10":490,"2024-11":614,"2024-12":451,"2025-01":466,"2025-02":756,"2025-03":614,"2025-04":550,"2025-05":547,"2025-06":409,"2025-07":799,"2025-08":931,"2025-09":508,"2025-10":629,"2025-11":887,"2025-12":799,"2026-01":696,"2026-02":512,"2026-03":1020},
+  "가전제품 및 정보통신기기": {"2024-10":1009,"2024-11":1142,"2024-12":721,"2025-01":713,"2025-02":928,"2025-03":1130,"2025-04":1007,"2025-05":697,"2025-06":878,"2025-07":1319,"2025-08":1282,"2025-09":1444,"2025-10":746,"2025-11":1070,"2025-12":1095,"2026-01":866,"2026-02":661,"2026-03":1071,"2026-04":2879},
+  "건물, 시설 및 서비스": {"2024-10":165,"2024-11":354,"2024-12":217,"2025-01":208,"2025-02":450,"2025-03":332,"2025-04":342,"2025-05":384,"2025-06":293,"2025-07":491,"2025-08":646,"2025-09":352,"2025-10":318,"2025-11":435,"2025-12":351,"2026-01":281,"2026-02":317,"2026-03":599,"2026-04":4095},
+  "건축/인테리어 자재 및 작업공구": {"2024-10":578,"2024-11":813,"2024-12":460,"2025-01":727,"2025-02":1595,"2025-03":1292,"2025-04":854,"2025-05":969,"2025-06":760,"2025-07":1358,"2025-08":1921,"2025-09":809,"2025-10":934,"2025-11":1574,"2025-12":1314,"2026-01":1043,"2026-02":960,"2026-03":2081},
+  "기타 장비 및 제품": {"2024-10":35,"2024-11":26,"2024-12":36,"2025-01":39,"2025-02":69,"2025-03":66,"2025-04":52,"2025-05":37,"2025-06":44,"2025-07":41,"2025-08":43,"2025-09":34,"2025-10":45,"2025-11":48,"2025-12":55,"2026-01":67,"2026-02":45,"2026-03":56},
+  "농·임·어업용 기계 및 관련용품": {"2024-10":80,"2024-11":77,"2024-12":141,"2025-01":17,"2025-02":25,"2025-03":39,"2025-04":50,"2025-05":61,"2025-06":52,"2025-07":57,"2025-08":55,"2025-09":79,"2025-10":80,"2025-11":104,"2025-12":63,"2026-01":34,"2026-02":48,"2026-03":70},
+  "도서, 음반 및 문구용품": {"2024-10":19,"2024-11":45,"2024-12":40,"2025-01":14,"2025-02":26,"2025-03":29,"2025-04":26,"2025-05":30,"2025-06":32,"2025-07":52,"2025-08":36,"2025-09":40,"2025-10":38,"2025-11":46,"2025-12":84,"2026-01":49,"2026-02":34,"2026-03":51},
+  "생활용품": {"2024-10":101,"2024-11":134,"2024-12":121,"2025-01":142,"2025-02":172,"2025-03":213,"2025-04":121,"2025-05":100,"2025-06":117,"2025-07":123,"2025-08":95,"2025-09":95,"2025-10":102,"2025-11":166,"2025-12":171,"2026-01":160,"2026-02":120,"2026-03":161,"2026-04":721},
+  "스포츠 및 취미용품": {"2024-10":474,"2024-11":744,"2024-12":592,"2025-01":338,"2025-02":314,"2025-03":546,"2025-04":454,"2025-05":965,"2025-06":371,"2025-07":931,"2025-08":882,"2025-09":419,"2025-10":594,"2025-11":611,"2025-12":438,"2026-01":336,"2026-02":366,"2026-03":662},
+  "식물 식품": {"2024-10":46,"2024-11":65,"2024-12":47,"2025-01":64,"2025-02":76,"2025-03":61,"2025-04":67,"2025-05":57,"2025-06":41,"2025-07":100,"2025-08":98,"2025-09":86,"2025-10":102,"2025-11":74,"2025-12":60,"2026-01":60,"2026-02":60,"2026-03":76,"2026-04":269},
+  "애완 동·식물 및 용품": {"2024-10":17,"2024-11":28,"2024-12":28,"2025-01":12,"2025-02":18,"2025-03":28,"2025-04":31,"2025-05":26,"2025-06":58,"2025-07":44,"2025-08":16,"2025-09":20,"2025-10":17,"2025-11":21,"2025-12":25,"2026-01":19,"2026-02":31,"2026-03":38},
+  "연료 및 전지": {"2024-10":56,"2024-11":72,"2024-12":71,"2025-01":33,"2025-02":57,"2025-03":47,"2025-04":62,"2025-05":40,"2025-06":64,"2025-07":62,"2025-08":119,"2025-09":90,"2025-10":51,"2025-11":104,"2025-12":127,"2026-01":112,"2026-02":65,"2026-03":160},
+  "완구 및 게임용품": {"2024-10":118,"2024-11":158,"2024-12":166,"2025-01":56,"2025-02":73,"2025-03":116,"2025-04":101,"2025-05":127,"2025-06":155,"2025-07":243,"2025-08":222,"2025-09":166,"2025-10":203,"2025-11":234,"2025-12":196,"2026-01":143,"2026-02":130,"2026-03":262},
+  "의류, 신발, 가방, 보석 및 시계": {"2024-10":109,"2024-11":226,"2024-12":220,"2025-01":109,"2025-02":266,"2025-03":152,"2025-04":100,"2025-05":105,"2025-06":95,"2025-07":81,"2025-08":95,"2025-09":112,"2025-10":293,"2025-11":107,"2025-12":132,"2026-01":82,"2026-02":49,"2026-03":88,"2026-04":2492},
+  "의약(외)품 및 의료용구": {"2024-10":307,"2024-11":335,"2024-12":227,"2025-01":279,"2025-02":369,"2025-03":327,"2025-04":436,"2025-05":298,"2025-06":265,"2025-07":388,"2025-08":400,"2025-09":387,"2025-10":409,"2025-11":489,"2025-12":470,"2026-01":419,"2026-02":287,"2026-03":533},
+  "자동차 및 관련 용품": {"2024-10":1038,"2024-11":771,"2024-12":593,"2025-01":175,"2025-02":333,"2025-03":316,"2025-04":764,"2025-05":731,"2025-06":1136,"2025-07":439,"2025-08":373,"2025-09":438,"2025-10":317,"2025-11":796,"2025-12":769,"2026-01":524,"2026-02":652,"2026-03":1237,"2026-04":525},
+  "조명기구 및 전기 부품&용품": {"2024-10":237,"2024-11":263,"2024-12":226,"2025-01":132,"2025-02":176,"2025-03":198,"2025-04":214,"2025-05":182,"2025-06":160,"2025-07":301,"2025-08":252,"2025-09":269,"2025-10":209,"2025-11":233,"2025-12":210,"2026-01":229,"2026-02":167,"2026-03":195},
+  "주방기기 및 용품": {"2024-10":91,"2024-11":113,"2024-12":124,"2025-01":75,"2025-02":93,"2025-03":105,"2025-04":105,"2025-05":78,"2025-06":104,"2025-07":123,"2025-08":117,"2025-09":122,"2025-10":115,"2025-11":142,"2025-12":181,"2026-01":147,"2026-02":87,"2026-03":145},
+  "축산·수산물 식품": {"2024-10":104,"2024-11":81,"2024-12":111,"2025-01":123,"2025-02":175,"2025-03":100,"2025-04":91,"2025-05":67,"2025-06":51,"2025-07":105,"2025-08":96,"2025-09":79,"2025-10":127,"2025-11":107,"2025-12":117,"2026-01":168,"2026-02":142,"2026-03":230,"2026-04":119},
+  "화장품 및 화장용품": {"2024-10":80,"2024-11":129,"2024-12":87,"2025-01":43,"2025-02":90,"2025-03":131,"2025-04":154,"2025-05":121,"2025-06":134,"2025-07":133,"2025-08":145,"2025-09":191,"2025-10":159,"2025-11":183,"2025-12":189,"2026-01":179,"2026-02":143,"2026-03":241,"2026-04":55},
+  "화재, 안전 및 보안 장비": {"2024-10":23,"2024-11":14,"2024-12":27,"2025-01":12,"2025-02":10,"2025-03":19,"2025-04":17,"2025-05":16,"2025-06":27,"2025-07":27,"2025-08":30,"2025-09":13,"2025-10":15,"2025-11":27,"2025-12":24,"2026-01":19,"2026-02":11,"2026-03":11}
+};
+
+const LEVELS = [
+  { cls:'safe',    label:'✅ 안전 구간', badgeBg:'rgba(29,158,117,0.15)',  badgeBorder:'rgba(29,158,117,0.4)',  badgeColor:'#1d9e75', scoreColor:'#1d9e75',
+    desc:'유행에 휩쓸리는 경향이 없고 구매 후 후회가 거의 없는 안전한 소비 구간입니다.',
+    actions:['정기 배송이나 묶음 할인을 활용해 구매 단가와 시간 비용을 최소화하세요.','필요할 때 최저가를 조회해 자유롭게 구매해도 무방합니다.'] },
+  { cls:'caution', label:'⚡ 주의 구간', badgeBg:'rgba(186,117,23,0.15)',  badgeBorder:'rgba(186,117,23,0.4)',  badgeColor:'#ba7517', scoreColor:'#ba7517',
+    desc:'계절적 요인이나 정상적인 취향 소비 구간입니다. 후회 확률이 낮지만 약간의 주의가 필요합니다.',
+    actions:['유행 시점 전에 미리 예산 범위를 정해두고 계획적으로 지출하세요.','한 달 사용 리뷰나 내돈내산 리뷰를 크로스 체크한 뒤 구매하세요.'] },
+  { cls:'warning', label:'⚠ 경고 구간',  badgeBg:'rgba(224,123,42,0.15)',  badgeBorder:'rgba(224,123,42,0.4)',  badgeColor:'#e07b2a', scoreColor:'#e07b2a',
+    desc:'SNS 바이럴이 폭발적이지만 실제 품질이 기대치에 못 미쳐 후회가 급증하는 불균형 유행 거품 구간입니다.',
+    actions:['주말 충동 결제를 자제하고 72시간 장바구니 법칙을 준수하세요. 3일 후에도 필요한지 재평가하세요.','유행에 편승해 가격이 부풀려진 상품보다 동일 카테고리의 스테디셀러 대안 상품을 먼저 탐색하세요.','별점 1~2점짜리 부정 리뷰를 정독하고 소비자원 위해정보 민원 발생 여부를 확인한 뒤 구매하세요.'] },
+  { cls:'danger',  label:'🚨 위험 구간', badgeBg:'rgba(216,64,64,0.15)',   badgeBorder:'rgba(216,64,64,0.4)',   badgeColor:'#d84040', scoreColor:'#d84040',
+    desc:'과장·허위 광고나 위생 불량 이슈로 구매자 대다수가 후회하는 매우 위험한 상품 구간입니다.',
+    actions:['"지금 안 사면 안 된다"며 공포 마케팅을 유도하는 낯선 브랜드는 유행 초기에 절대 구매하지 말고 관망하세요.','이미 구매해 피해를 입었다면 환불을 강력히 요구하고 한국소비자원에 위해 민원을 적극 신고하세요.'] }
+];
+
+let chart = null;
+let fMode = 'auto';
+let cMode = 'auto';
+let autoRReview = 0;
+let autoCVal = 0;
+
+function clamp(v,mn,mx){ return Math.min(mx,Math.max(mn,v)); }
+function toggleManual(id){ document.getElementById(id).classList.toggle('open'); }
+
+/* ── 민원 C 자동 계산 ── */
+function updateComplaintCat(){
+  const cat = document.getElementById('category').value;
+
+  const data = COMPLAINT_DATA[cat];
+  if(!data){
+    document.getElementById('c-note').textContent = '해당 카테고리의 민원 데이터가 없습니다.';
+    return;
+  }
+
+  // 전체 기간 데이터 사용
+  const filtered = Object.entries(data).sort((a,b)=>a[0].localeCompare(b[0]));
+  if(filtered.length === 0) return;
+
+  const vals   = filtered.map(([,v])=>v);
+  const peak   = Math.max(...vals);
+  const peakYm = filtered.find(([,v])=>v===peak)[0];
+  const base   = Math.round(vals.reduce((a,b)=>a+b,0) / vals.length);
+  const C      = Math.min(Math.max((peak - base) / base, 0), 1);
+
+  autoCVal = C;
+  cMode    = 'auto';
+
+  // UI 업데이트
+  const monthsEl = document.getElementById('c-months');
+  monthsEl.innerHTML = filtered.map(([ym,v]) =>
+    `<span class="complaint-month-chip ${ym===peakYm?'peak':''}">${ym} · ${v.toLocaleString()}건${ym===peakYm?' ★':''}</span>`
+  ).join('');
+
+  document.getElementById('c-peak-val').textContent  = peak.toLocaleString() + '건 (' + peakYm + ')';
+  document.getElementById('c-base-val').textContent  = base.toLocaleString() + '건';
+  document.getElementById('c-score-val').textContent = C.toFixed(3);
+  document.getElementById('c-bar-fill').style.width  = (C * 100).toFixed(1) + '%';
+  document.getElementById('c-bar-fill').style.background = C > 0.3 ? 'var(--critical)' : C > 0.1 ? 'var(--warn)' : 'var(--safe)';
+
+  // 민원 지수 해석 배지
+  const badge = document.getElementById('c-level-badge');
+  badge.style.display = 'block';
+  if(C >= 0.3){
+    badge.style.background = 'rgba(216,64,64,0.12)';
+    badge.style.color = '#d84040';
+    badge.style.border = '1px solid rgba(216,64,64,0.3)';
+    badge.textContent = `🚨 높음 (C=${C.toFixed(2)}) — 유행 기간 민원이 평소보다 ${(C*100).toFixed(0)}% 급증했습니다. 소비자 피해가 실제로 많이 발생한 구간입니다.`;
+  } else if(C >= 0.1){
+    badge.style.background = 'rgba(224,123,42,0.12)';
+    badge.style.color = '#e07b2a';
+    badge.style.border = '1px solid rgba(224,123,42,0.3)';
+    badge.textContent = `⚠ 보통 (C=${C.toFixed(2)}) — 평소보다 ${(C*100).toFixed(0)}% 민원이 늘었습니다. 일부 소비자 불만이 증가한 수준입니다.`;
+  } else {
+    badge.style.background = 'rgba(29,158,117,0.12)';
+    badge.style.color = '#1d9e75';
+    badge.style.border = '1px solid rgba(29,158,117,0.3)';
+    badge.textContent = `✅ 낮음 (C=${C.toFixed(2)}) — 민원 증가폭이 ${(C*100).toFixed(0)}%로 미미합니다. 유행 대비 소비자 피해가 거의 없는 안전한 수준입니다.`;
+  }
+
+  document.getElementById('c-note').textContent = `데이터 기간: 2024-10 ~ 2026-04 · 분석 기간 내 ${filtered.length}개월 데이터 사용`;
+
+  compute();
+}
+
+/* ── 네이버 데이터랩 바로가기 ── */
+function openDatalab(){
+  const keyword = document.getElementById('keyword-s').value.trim();
+  if(!keyword){ alert('검색어를 입력해주세요.'); return; }
+  const params = new URLSearchParams({
+    queryGroups: keyword,
+    startDate: '2024.01.01',
+    endDate: new Date().toISOString().slice(0,10).replace(/-/g,'.'),
+    timeUnit: 'date', gender: '', age: '', device: ''
+  });
+  window.open(`https://datalab.naver.com/keyword/trendSearch.naver?${params}`, '_blank');
+}
+
+/* ── 블랙키위 바로가기 ── */
+function openBlackkiwi(){
+  const keyword = document.getElementById('keyword-s').value.trim();
+  if(!keyword){ alert('검색어를 입력해주세요.'); return; }
+  window.open(`https://blackkiwi.net/keyword/report?keyword=${encodeURIComponent(keyword)}`, '_blank');
+}
+function openCoupang(){
+  const keyword = document.getElementById('keyword-f').value.trim() || document.getElementById('keyword-s').value.trim();
+  if(!keyword){ alert('검색어를 입력해주세요.'); return; }
+  window.open(`https://www.coupang.com/np/search?q=${encodeURIComponent(keyword)}&sorter=reviewCountDESC`, '_blank');
+}
+
+/* ── S 표시 업데이트 ── */
+function updateSDisplay(){
+  const peak = parseFloat(document.getElementById('ratio-peak').value) || 0;
+  const avg  = parseFloat(document.getElementById('ratio-avg').value)  || 0;
+  const S    = peak > 0 ? clamp((peak - avg) / peak, 0, 1) : 0;
+  document.getElementById('s-display').textContent = S.toFixed(3);
+  compute();
+}
+
+/* ── Claude API 이미지 분석 ── */
+function handleDrop(e){
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if(file && file.type.startsWith('image/')) processImage(file);
+}
+
+function analyzeGraph(){
+  const file = document.getElementById('graph-img').files[0];
+  if(file) processImage(file);
+}
+
+async function processImage(file){
+  const label = document.getElementById('upload-label');
+  document.getElementById('upload-text').textContent = file.name;
+  label.style.borderColor = 'var(--accent)';
+  setStatusAI('loading','<span class="spinner"></span>AI가 그래프를 분석하고 있어요...');
+  document.getElementById('ai-result').style.display = 'none';
+
+  // 이미지를 base64로 변환
+  const base64 = await new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result.split(',')[1]);
+    reader.readAsDataURL(file);
+  });
+
+  const prompt = `이 이미지는 네이버 데이터랩 검색어트렌드 그래프입니다.
+그래프를 분석하여 다음 값을 JSON으로만 답해주세요. 다른 말은 하지 말고 JSON만:
+{
+  "peak": 그래프에서 가장 높은 지점의 Y축 수치 (0~100 사이 숫자),
+  "avg": 전체 기간의 평균 Y축 수치 추정값 (0~100 사이 숫자),
+  "comment": "그래프 형태에 대한 한 줄 설명 (예: 2026년 5월에 급등, 평소 검색량 거의 없음)"
+}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 256,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      })
+    });
+
+    const data = await res.json();
+    const text = data.content[0].text.trim();
+    const clean = text.replace(/```json|```/g,'').trim();
+    const parsed = JSON.parse(clean);
+
+    const peak = parseFloat(parsed.peak) || 100;
+    const avg  = parseFloat(parsed.avg)  || 5;
+    const S    = peak > 0 ? clamp((peak - avg) / peak, 0, 1) : 0;
+
+    // 값 반영
+    document.getElementById('ratio-peak').value = peak.toFixed(1);
+    document.getElementById('ratio-avg').value  = avg.toFixed(1);
+    document.getElementById('fv-peak').textContent = peak.toFixed(1);
+    document.getElementById('fv-avg').textContent  = avg.toFixed(1);
+    document.getElementById('s-display').textContent = S.toFixed(3);
+    document.getElementById('ai-comment').textContent = '💡 ' + (parsed.comment || '');
+    document.getElementById('ai-result').style.display = 'block';
+
+    setStatusAI('success', `✓ 분석 완료 — Peak: ${peak}, 평균: ${avg}, S: ${S.toFixed(3)}`);
+    compute();
+  } catch(e) {
+    setStatusAI('error', '✕ 분석 실패: ' + e.message);
+  }
+}
+
+function setStatusAI(cls, msg){
+  const el = document.getElementById('status-ai');
+  el.className = `api-status ${cls}`;
+  el.innerHTML = msg;
+}
+
+/* ── 최종 계산 ── */
+function compute(){
+  const sPeak = parseFloat(document.getElementById('s-peak').value) || 0;
+  const S = clamp(sPeak / 100, 0, 1);
+  document.getElementById('s-display').textContent = S.toFixed(3);
+
+  const sat   = parseFloat(document.getElementById('sat').value)   || 0;
+  const sun   = parseFloat(document.getElementById('sun').value)   || 0;
+  const mcomp = parseFloat(document.getElementById('mcomp').value) || 0;
+  const W = clamp((sat+sun)/100, 0, 1);
+  const M = clamp(mcomp/100, 0, 1);
+  const I = clamp((W+M)/2, 0, 1);
+
+  document.getElementById('i-display').textContent = I.toFixed(3);
+
+  const r1     = parseFloat(document.getElementById('r1').value)     || 0;
+  const r2     = parseFloat(document.getElementById('r2').value)     || 0;
+  const rtotal = parseFloat(document.getElementById('rtotal').value) || 1;
+  const R_rv   = clamp((r1+r2)/rtotal, 0, 1);
+
+  // F 결과 표시
+  document.getElementById('f-r-display').textContent = (R_rv*100).toFixed(1) + '%';
+
+  let C;
+  if(cMode==='auto'){ C = autoCVal; }
+  else { const cp=parseFloat(document.getElementById('cp').value)||0; const cb=parseFloat(document.getElementById('cb').value)||1; C=clamp((cp-cb)/cb,0,1); }
+
+  const F = clamp((R_rv+C)/2,0,1);
+  const R = clamp((S+I+F)/3,0,1);
+
+  let lvl=0;
+  if(R>=0.7)lvl=3; else if(R>=0.4)lvl=2; else if(R>=0.2)lvl=1;
+  const lv  = LEVELS[lvl];
+  const pct = (R*100).toFixed(1);
+
+  document.getElementById('bk-s').textContent = S.toFixed(2);
+  document.getElementById('bk-i').textContent = I.toFixed(2);
+  document.getElementById('bk-f').textContent = F.toFixed(2);
+  document.getElementById('result-score').textContent = pct;
+
+  const rc = document.getElementById('result-card');
+  rc.className = 'result-card '+lv.cls;
+  const badge = document.getElementById('result-badge');
+  badge.textContent=lv.label; badge.style.background=lv.badgeBg; badge.style.borderColor=lv.badgeBorder; badge.style.color=lv.badgeColor;
+  document.getElementById('result-score').style.color = lv.scoreColor;
+  document.getElementById('result-desc').textContent  = lv.desc;
+  document.getElementById('level-indicator').style.left = clamp(R*100,1,99)+'%';
+  document.getElementById('action-list').innerHTML = lv.actions.map((a,i)=>`
+    <div class="action-item"><span class="action-num" style="background:${lv.badgeBg};color:${lv.badgeColor}">${i+1}</span><span>${a}</span></div>`).join('');
+  renderChart(S,I,F);
+}
+
+function renderChart(S,I,F){
+  const ctx=document.getElementById('myChart');
+  const colors=['#7f77dd','#ba7517','#d84040'];
+  const vals=[+(S*100).toFixed(1),+(I*100).toFixed(1),+(F*100).toFixed(1)];
+  if(chart){ chart.data.datasets[0].data=vals; chart.update('none'); }
+  else {
+    chart=new Chart(ctx,{type:'bar',
+      data:{labels:['동조성 S','충동성 I','부정피드백 F'],datasets:[{data:vals,backgroundColor:colors.map(c=>c+'33'),borderColor:colors,borderWidth:1.5,borderRadius:6}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+c.parsed.y.toFixed(1)+'%'}}},
+        scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%',color:'#4a4a56',font:{family:'DM Mono',size:11}},grid:{color:'rgba(255,255,255,0.05)'},border:{color:'rgba(255,255,255,0.07)'}},
+                x:{ticks:{color:'#8a8a96',font:{family:'Noto Sans KR',size:12}},grid:{display:false},border:{color:'rgba(255,255,255,0.07)'}}}}});
+  }
+}
+
+document.getElementById('keyword-s').addEventListener('keydown', e=>{ if(e.key==='Enter') openDatalab(); });
+document.getElementById('keyword-s').addEventListener('keydown', e=>{ if(e.key==='Enter') openBlackkiwi(); });
+document.getElementById('keyword-f').addEventListener('keydown', e=>{ if(e.key==='Enter') openCoupang(); });
+
+updateComplaintCat();
+compute();
+</script>
+</body>
+</html>
